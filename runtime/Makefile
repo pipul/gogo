@@ -3,7 +3,8 @@ DEBUG = -g -DDEBUG -DVALGRIND
 CFLAGS = -W -Wall $(DEBUG)
 OBJS = 	task.o \
 	malloc.o \
-	mem_linux.o
+	mem_linux.o \
+	spinlock.o
 
 LIBRARY = libgogo.a
 
