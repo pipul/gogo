@@ -156,30 +156,7 @@ void mspan_init(struct mspan *span, long pageid, int npages) {
 	//span->sizeclass = NULL;
 	//span->elemsize = 0;
 }
-/*
-void mspanlist_init(struct mspanlist *list) {
-	LIST_INIT(&list->spanlist);
-}
 
-
-int mspanlist_isempty(struct mspanlist *list) {
-	return LIST_EMPTY(&list->spanlist);
-}
-
-
-void mspanlist_insert(struct mspanlist *list, struct mspan *span) {
-	LIST_INSERT_HEAD(&list->spanlist, span, alllink);
-}
-
-struct mspan *mspanlist_first(struct mspanlist *list) {
-	return LIST_FIRST(&list->spanlist);
-}
-
-void mspanlist_remove(struct mspan *span) {
-	LIST_REMOVE(span, alllink);
-}
-
-*/
 
 
 // marena
@@ -195,8 +172,6 @@ void marena_init(struct marena *arena, int sizeclass) {
 	arena->elemsize = class_to_size[sizeclass];
 	INIT_LIST_HEAD(&arena->empty);
 	INIT_LIST_HEAD(&arena->nonempty);
-	//mspanlist_init(&arena->empty);
-	//mspanlist_init(&arena->nonempty);
 }
 
 
@@ -210,7 +185,6 @@ int marena_alloclist(struct marena *arena, int n, struct mlink **pfirst) {
 
 	spin_lock(arena);
 	if (list_empty(&arena->nonempty)) {
-	//if (mspanlist_isempty(&arena->nonempty)) {
 		// allocate more memory from heap
 		if (marena_grow(arena)) {
 			spin_unlock(arena);
@@ -220,7 +194,6 @@ int marena_alloclist(struct marena *arena, int n, struct mlink **pfirst) {
 	}
 
 	s = list_entry(list_head(&arena->nonempty), struct mspan, alllink);
-	//s = mspanlist_first(&arena->nonempty);
 
 	if (arena->sizeclass != 0)
 		cap = (s->npages << PAGESHIFT) / arena->elemsize;
@@ -248,8 +221,6 @@ int marena_alloclist(struct marena *arena, int n, struct mlink **pfirst) {
 			BUG_ON();
 		}
 		list_move(&s->alllink, &arena->empty);
-		//mspanlist_remove(s);
-		//mspanlist_insert(&arena->empty, s);
 	}
 
 	spin_unlock(arena);
@@ -271,8 +242,6 @@ static void marena_free(struct marena *arena, void *ptr) {
 	// Move to nonempty if necessary
 	if (span->freelist == NULL) {
 		list_move(&span->alllink, &arena->nonempty);
-		//mspanlist_remove(span);
-		//mspanlist_insert(&arena->nonempty, span);
 	}
 
 	plink = ptr;
@@ -282,7 +251,6 @@ static void marena_free(struct marena *arena, void *ptr) {
 	// Move span back to heap if it is completely freed.
 	if (--span->ref == 0) {
 		list_del(&span->alllink);
-		//mspanlist_remove(span);
 		span->freelist = NULL;
 		mheap_free(&runtime_mheap, span);
 	}
@@ -307,8 +275,6 @@ void marena_freespan(struct marena *arena, struct mspan *span,
 	// move to nonempty if necessary
 	if (!span->freelist) {
 		list_move(&span->alllink, &arena->nonempty);
-		//mspanlist_remove(span);
-		//mspanlist_insert(&arena->nonempty, span);
 	}
 
 	end->next = span->freelist;
@@ -320,7 +286,6 @@ void marena_freespan(struct marena *arena, struct mspan *span,
 	if (span->ref == 0) {
 		size = class_to_size[arena->sizeclass];
 		list_del(&span->alllink);
-		//mspanlist_remove(span);
 		spin_unlock(arena);
 		
 		span->freelist = NULL;
@@ -368,7 +333,6 @@ static int marena_grow(struct marena *arena) {
 
 	spin_lock(arena);
 	list_add(&span->alllink, &arena->nonempty);
-	//mspanlist_insert(&arena->nonempty, span);
 	return 0;
 }
 
@@ -396,10 +360,8 @@ void mheap_init(struct mheap *heap,
 	
 	for (i = 0; i < MAX_MHEAP_LIST; i++) {
 		INIT_LIST_HEAD(&heap->free[i]);
-		//mspanlist_init(&heap->free[i]);
 	}
 	INIT_LIST_HEAD(&heap->large);
-	//mspanlist_init(&heap->large);
 	for (i = 0; i < NUM_SIZE_CLASSES; i++) {
 		marena_init(&heap->arenas[i], i);
 	}
@@ -456,11 +418,9 @@ static void __mheap_free(struct mheap *heap, struct mspan *span) {
 	// todo. back more mem into system, don't cache them
 	if (span->npages > MAX_MHEAP_LIST) {
 		list_add(&span->alllink, &heap->large);
-		//mspanlist_insert(&heap->large, span);
 		return;
 	}
 	list_add(&span->alllink, &heap->free[span->npages - 1]);
-	//mspanlist_insert(&heap->free[span->npages - 1], span);
 	return;
 }
 
@@ -500,9 +460,6 @@ static int mheap_grow(struct mheap *heap, int npage) {
 static struct mspan *mheap_alloclarge(struct mheap *heap, int npage) {
 	struct mspan *span, *best = NULL;
 
-	//for (span = list_entry(list_head(&heap->large), struct mspan, alllink);
-	//for (span = mspanlist_first(&heap->large);
-	//     span; span = LIST_NEXT(span, alllink)) {
 	list_for_each_entry(span, &heap->large, struct mspan, alllink) {
 		if (span->npages < npage)
 			continue;
@@ -527,9 +484,7 @@ struct mspan *mheap_alloc(struct mheap *heap,
 	// First: try in fixed-size lists up to max
 	for (n = npage; n < MAX_MHEAP_LIST; n++) {
 		if (!list_empty(&heap->free[n - 1])) {
-		//if (!mspanlist_isempty(&heap->free[n - 1])) {
 			span = list_entry(list_head(&heap->free[n - 1]), struct mspan, alllink);
-			//span = mspanlist_first(&heap->free[n - 1]);
 			goto found;
 		}
 	}
@@ -543,8 +498,8 @@ struct mspan *mheap_alloc(struct mheap *heap,
 	}
 
  found:
-//mspanlist_remove(span);
-list_del(&span->alllink);
+
+	list_del(&span->alllink);
 	if (span->npages > npage) {
 		// Trim extra pages back into heap
 		tmpspan = fixmem_alloc(&heap->mspancache);

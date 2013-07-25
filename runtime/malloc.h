@@ -65,7 +65,6 @@
 
 #include "runtime.h"
 #include "list.h"
-//#include <sys/queue.h>
 
 enum {
 	PAGESHIFT = 12,
@@ -170,29 +169,11 @@ struct mspan {
 	int ref;                     // number of allocated objects in this span
 	struct mlink *freelist;      // list of free objects
 
-	//LIST_ENTRY(mspan) alllink;   
 	struct list_head alllink;    // in a span linked list
 };
 
-/*
-struct mspanlist {
-	struct list_head spanlist;
-	//LIST_HEAD(_mspanlist, mspan) spanlist;
-};
-*/
 void mspan_init(struct mspan *span, long pageid, int npages);
 
-
-// Every mspan is in one doubly-linked list, either one of the
-// mheap's free lists or one of the marena's span lists. We use
-// mspanlist structures to maintain this list. 
-/*
-void mspanlist_init(struct mspanlist *list);
-int mspanlist_isempty(struct mspanlist *list);
-void mspanlist_insert(struct mspanlist *list, struct mspan *span);
-struct mspan *mspanlist_first(struct mspanlist *list);
-void mspanlist_remove(struct mspan *span);
-*/
 
 
 struct marena {
@@ -203,8 +184,6 @@ struct marena {
 
 	struct list_head empty;
 	struct list_head nonempty;
-	//struct mspanlist empty;
-	//struct mspanlist nonempty;
 };
 
 void marena_init(struct marena *arena, int sizeclass);
@@ -218,8 +197,6 @@ struct mheap {
 	struct spinlock Lock;
 	struct list_head free[MAX_MHEAP_LIST];
 	struct list_head large;
-	//struct mspanlist free[MAX_MHEAP_LIST];
-	//struct mspanlist large;
 
 	//struct mspan *map[1<<MHEAPMAP_BITS];
 	struct mspan **map;
