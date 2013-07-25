@@ -14,7 +14,7 @@ $(LIBRARY): $(OBJS)
 	ar crv libgogo.a $(OBJS)
 
 tst:
-	$(CC) test.c $(LIBRARY) -lpthread -o test
-	valgrind --log-file=memcheck.log --leak-check=full --show-reachable=yes ./test
+	$(CC) test.c $(LIBRARY) -lpthread -o test.out
+	valgrind --log-file=memcheck.log --leak-check=full --show-reachable=yes ./test.out
 clean:
-	rm *.o && rm $(LIBRARY) && rm test
+	rm *.o && rm $(LIBRARY) && rm test.out
