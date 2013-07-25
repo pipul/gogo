@@ -61,11 +61,10 @@ void test_mem(void *args) {
 	return;
 }
 
-
 int task_main(struct task_args *args) {
-	gogo(test_main, NULL);
-	gogo(test_msize, NULL);
-	gogo(test_mem, NULL);
+	//gogo(test_main, NULL);
+	//gogo(test_msize, NULL);
+	//gogo(test_mem, NULL);
 	return 0;
 }
 
