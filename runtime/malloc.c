@@ -190,7 +190,7 @@ static void marena_free(struct marena *arena, void *ptr);
 
 // Initialize a simgle arena free list
 void marena_init(struct marena *arena, int sizeclass) {
-	spinlock_init(&arena->Lock);
+	spinlock_init(arena);
 	arena->sizeclass = sizeclass;
 	arena->elemsize = class_to_size[sizeclass];
 	mspanlist_init(&arena->empty);
@@ -371,7 +371,7 @@ static int marena_grow(struct marena *arena) {
 void mheap_init(struct mheap *heap,
 		void *(*allocator)(int), void (*free)(void *)) {
 	int i, mapsize;
-	spinlock_init(&heap->Lock);
+	spinlock_init(heap);
 
 	// initialized the mem size class
 	msize_init();
