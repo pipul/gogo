@@ -190,6 +190,7 @@ void mspanlist_remove(struct mspan *span);
 
 
 struct marena {
+	// Lock must be the first field
 	struct spinlock Lock;
 	int sizeclass;
 	int elemsize;
@@ -199,15 +200,13 @@ struct marena {
 };
 
 void marena_init(struct marena *arena, int sizeclass);
-void marena_lock(struct marena *arena);
-void marena_unlock(struct marena *arena);
-
 int marena_alloclist(struct marena *arena, int n, struct mlink **first);
 void marena_freelist(struct marena *arena, int n, struct mlink *first);
 void marena_freespan(struct marena *arena, struct mspan *span,
 		     int n, struct mlink *start, struct mlink *end);
 
 struct mheap {
+	// Lock must be the first field
 	struct spinlock Lock;
 	struct mspanlist free[MAX_MHEAP_LIST];
 	struct mspanlist large;
@@ -226,10 +225,6 @@ extern struct mheap runtime_mheap;
 void mheap_init(struct mheap *heap,
 		void *(*allocator)(int), void (*free)(void *));
 void mheap_exit(struct mheap *heap);
-
-void mheap_lock(struct mheap *heap);
-void mheap_unlock(struct mheap *heap);
-
 struct mspan *mheap_alloc(struct mheap *heap,
 			  int npages, int sizeclass, int zerod);
 void mheap_free(struct mheap *heap, struct mspan *span);

@@ -197,16 +197,6 @@ void marena_init(struct marena *arena, int sizeclass) {
 	mspanlist_init(&arena->nonempty);
 }
 
-void marena_lock(struct marena *arena) {
-	spin_lock(&arena->Lock);
-}
-
-void marena_unlock(struct marena *arena) {
-	spin_unlock(&arena->Lock);
-}
-
-
-
 
 // Allocate up to n objects from the arena free list.
 // Return the number of objects allocated. the objects are linked
@@ -216,11 +206,11 @@ int marena_alloclist(struct marena *arena, int n, struct mlink **pfirst) {
 	struct mlink *first, *last;
 	int cap, avail, i;
 
-	marena_lock(arena);
+	spin_lock(arena);
 	if (mspanlist_isempty(&arena->nonempty)) {
 		// allocate more memory from heap
 		if (marena_grow(arena)) {
-			marena_unlock(arena);
+			spin_unlock(arena);
 			*pfirst = NULL;
 			return 0;
 		}
@@ -257,7 +247,7 @@ int marena_alloclist(struct marena *arena, int n, struct mlink **pfirst) {
 		mspanlist_insert(&arena->empty, s);
 	}
 
-	marena_unlock(arena);
+	spin_unlock(arena);
 
 	*pfirst = first;
 	return n;
@@ -294,18 +284,18 @@ static void marena_free(struct marena *arena, void *ptr) {
 void marena_freelist(struct marena *arena, int n, struct mlink *first) {
 	struct mlink *v, *next;
 	
-	marena_lock(arena);
+	spin_lock(arena);
 	for (v = first; v; v = next) {
 		next = v->next;
 		marena_free(arena, v);
 	}
-	marena_unlock(arena);
+	spin_unlock(arena);
 }
 
 void marena_freespan(struct marena *arena, struct mspan *span,
 		     int n, struct mlink *start, struct mlink *end) {
 	int size;
-	marena_lock(arena);
+	spin_lock(arena);
 
 	// move to nonempty if necessary
 	if (!span->freelist) {
@@ -322,14 +312,14 @@ void marena_freespan(struct marena *arena, struct mspan *span,
 	if (span->ref == 0) {
 		size = class_to_size[arena->sizeclass];
 		mspanlist_remove(span);
-		marena_unlock(arena);
+		spin_unlock(arena);
 		
 		span->freelist = NULL;
 		mheap_free(&runtime_mheap, span);
 		return;
 	}
 	
-	marena_unlock(arena);
+	spin_unlock(arena);
 	return;
 }
 
@@ -346,12 +336,12 @@ static int marena_grow(struct marena *arena) {
 	// todo: fix me!
 	// Maybe more thread reach here to alloc memory from
 	// mheap, this is not good.
-	marena_unlock(arena);
+	spin_unlock(arena);
 
 	size_class_info(arena->sizeclass, &size, &npages, &nobjs);
 	span = mheap_alloc(&runtime_mheap, npages, arena->sizeclass, 1);
 	if (!span) {
-		marena_lock(arena);
+		spin_lock(arena);
 		return -1;
 	}
 
@@ -367,7 +357,7 @@ static int marena_grow(struct marena *arena) {
 
 	*tailp = NULL;
 
-	marena_lock(arena);
+	spin_lock(arena);
 	mspanlist_insert(&arena->nonempty, span);
 	return 0;
 }
@@ -410,7 +400,7 @@ void mheap_exit(struct mheap *heap) {
 	int i, slot = 1ULL << MHEAPMAP_BITS;
 	struct mspan *span;
 
-	mheap_lock(heap);
+	spin_lock(heap);
 	// sys_free all the allocated pages
 	for (i = 0; i < slot; i++) {
 		if (!(span = heap->map[i]))
@@ -425,18 +415,9 @@ void mheap_exit(struct mheap *heap) {
 	fixmem_exit(&heap->mspancache);
 	fixmem_exit(&heap->mcachecache);
 
-	mheap_unlock(heap);
+	spin_unlock(heap);
 	return;
 }
-
-void mheap_lock(struct mheap *heap) {
-	spin_lock(&heap->Lock);
-}
-
-void mheap_unlock(struct mheap *heap) {
-	spin_unlock(&heap->Lock);
-}
-
 
 // map a pages range into heap->map
 static void mheap_map(struct mheap *heap, struct mspan *span) {
@@ -470,9 +451,9 @@ static void __mheap_free(struct mheap *heap, struct mspan *span) {
 }
 
 void mheap_free(struct mheap *heap, struct mspan *span) {
-	mheap_lock(heap);
+	spin_lock(heap);
 	__mheap_free(heap, span);
-	mheap_unlock(heap);
+	spin_unlock(heap);
 }
 
 
@@ -525,7 +506,7 @@ struct mspan *mheap_alloc(struct mheap *heap,
 	struct mspan *span, *tmpspan;
 	int n;
 	
-	mheap_lock(heap);
+	spin_lock(heap);
 
 	// First: try in fixed-size lists up to max
 	for (n = npage; n < MAX_MHEAP_LIST; n++) {
@@ -557,11 +538,11 @@ struct mspan *mheap_alloc(struct mheap *heap,
 	}
 
 	mheap_map(heap, span);
-	mheap_unlock(heap);
+	spin_unlock(heap);
 	memset((void *)(span->pageid << PAGESHIFT), 0, npage << PAGESHIFT);
 	return span;
  ENOMEM:
-	mheap_unlock(heap);
+	spin_unlock(heap);
 	return NULL;
 }
 
