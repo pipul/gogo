@@ -8,7 +8,6 @@
 #ifndef _LIST_H_
 #define _LIST_H_
 
-
 // Get offset of a member
 #define offsetof(TYPE, MEMBER) ((long) &(((TYPE *)0)->MEMBER))
 
@@ -46,6 +45,9 @@ struct list_head {
 #define INIT_LIST_HEAD(ptr) do { \
 	(ptr)->next = (ptr); (ptr)->prev = (ptr); \
 } while(0)
+
+
+#define list_head(head) (head)->next
 
 // Insert a new entry between two known consecutive entries
 // this is only for internal list manipulation where we know
@@ -274,12 +276,12 @@ struct hlist_node {
 	struct hlist_node *next, **pprev;
 };
 
-#define HLIST_HEAD_INIT { .first = NULL }
+#define HLIST_HEAD_INIT { .first = 0 }
 #define HLIST_HEAD(name) struct hlist_head name = HLIST_HEAD_INIT
-#define INIT_HLIST_HEAD(ptr) ((ptr)->first = NULL)
+#define INIT_HLIST_HEAD(ptr) ((ptr)->first = 0)
 #define INIT_HLIST_NODE(ptr) do { \
-	(ptr)->next = NULL; \
-	(ptr)->pprev = NULL; \
+	(ptr)->next = 0; \
+	(ptr)->pprev = 0; \
 } while(0)
 
 static inline int hlist_unhashed(const struct hlist_node *node) {

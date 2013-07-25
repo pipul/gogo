@@ -4,8 +4,8 @@
 #ifndef _TASK_H_
 #define _TASK_H_
 
+#include "list.h"
 #include <unistd.h>
-#include <sys/queue.h>
 #include <sys/types.h>
 #include <ucontext.h>
 
@@ -26,7 +26,8 @@ typedef struct task {
 	void *args;
 	void *stackguard;
 	int stacksize;
-	LIST_ENTRY(task) alllink;   // on all coroutine
+	//LIST_ENTRY(task) alllink;
+	struct list_head alllink;    // on all coroutine
 } task_t;
 
 #define BUG_ON(x...) abort()

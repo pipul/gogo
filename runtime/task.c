@@ -17,14 +17,16 @@
 struct TaskQueue {
 	// Lock must be the first field
 	struct spinlock Lock;
-	LIST_HEAD(_taskqueuehead, task) queue;
+	struct list_head queue;
+	//LIST_HEAD(_taskqueuehead, task) queue;
 };
 
 static struct TaskQueue taskqueue;
 
 static void taskqueue_init(struct TaskQueue *tq) {
 	spinlock_init(tq);
-	LIST_INIT(&tq->queue);
+	INIT_LIST_HEAD(&tq->queue);
+	//LIST_INIT(&tq->queue);
 }
 
 static void taskqueue_exit(struct TaskQueue *tq) {
@@ -49,7 +51,8 @@ static void taskqueue_free(struct TaskQueue *tq) {
 
 static int taskqueue_push(struct TaskQueue *tq, struct task *t) {
 	spin_lock(tq);
-	LIST_INSERT_HEAD(&tq->queue, t, alllink);
+	list_add(&t->alllink, &tq->queue);
+	//LIST_INSERT_HEAD(&tq->queue, t, alllink);
 	spin_unlock(tq);
 	return 0;
 }
@@ -58,12 +61,15 @@ static struct task *taskqueue_pop(struct TaskQueue *tq) {
 	struct task *t;
 
 	spin_lock(tq);
-	if (LIST_EMPTY(&tq->queue)) {
+	if (list_empty(&tq->queue)) {
+	//if (LIST_EMPTY(&tq->queue)) {
 		spin_unlock(tq);
 		return NULL;
 	}
-	t = LIST_FIRST(&tq->queue);
-	LIST_REMOVE(t, alllink);
+	t = list_entry(list_head(&tq->queue), struct task, alllink);
+	list_del(&t->alllink);
+	//t = LIST_FIRST(&tq->queue);
+	//LIST_REMOVE(t, alllink);
 	spin_unlock(tq);
 	return t;
 }
@@ -81,20 +87,24 @@ struct thread {
 	void *stackguard;
 	int stacksize;
 	struct task *task0; // current running task on this thread;
-	LIST_ENTRY(thread) alllink;
+
+	//LIST_ENTRY(thread) alllink;
+	struct list_head alllink;
 };
 
 struct ThreadQueue {
 	// Lock must be the first field
 	struct spinlock Lock;
-	LIST_HEAD(_threadqueuehead, thread) queue;
+	//LIST_HEAD(_threadqueuehead, thread) queue;
+	struct list_head queue;
 };
 
 struct ThreadQueue threadqueue;
 
 static void threadqueue_init(struct ThreadQueue *tq) {
 	spinlock_init(tq);
-	LIST_INIT(&tq->queue);
+	//LIST_INIT(&tq->queue);
+	INIT_LIST_HEAD(&tq->queue);
 }
 
 
@@ -121,19 +131,23 @@ static struct thread *threadqueue_pop(struct ThreadQueue *tq) {
 	struct thread *t;
 
 	spin_lock(tq);
-	if (LIST_EMPTY(&tq->queue)) {
+	//if (LIST_EMPTY(&tq->queue)) {
+	if (list_empty(&tq->queue)) {
 	        spin_unlock(tq);
 		return NULL;
 	}
-	t = LIST_FIRST(&tq->queue);
-	LIST_REMOVE(t, alllink);
+	t = list_entry(list_head(&tq->queue), struct thread, alllink);
+	list_del(&t->alllink);
+	//t = LIST_FIRST(&tq->queue);
+	//LIST_REMOVE(t, alllink);
 	spin_unlock(tq);
 	return t;
 }
 
 static void threadqueue_push(struct ThreadQueue *tq, struct thread *t) {
 	spin_lock(tq);
-	LIST_INSERT_HEAD(&tq->queue, t, alllink);
+	list_add(&t->alllink, &tq->queue);
+	//LIST_INSERT_HEAD(&tq->queue, t, alllink);
 	spin_unlock(tq);
 }
 
