@@ -7,7 +7,6 @@
 #include <unistd.h>
 #include <sys/queue.h>
 #include <sys/types.h>
-#include <pthread.h>
 #include <ucontext.h>
 
 #define TASK_RUNNING 0x0001
