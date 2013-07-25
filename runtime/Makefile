@@ -1,5 +1,5 @@
 CC = gcc
-DEBUG = -g -DDEBUG -DVALGRIND
+DEBUG = -g -DDEBUG -DVALGRIND -DOS=LINUX
 CFLAGS = -W -Wall $(DEBUG)
 OBJS = 	task.o \
 	malloc.o \
