@@ -185,7 +185,7 @@ void mspanlist_remove(struct mspan *span) {
 // marena
 
 static int marena_grow(struct marena *arena);
-static void *marena_alloc(struct marena *arena);
+//static void *marena_alloc(struct marena *arena);
 static void marena_free(struct marena *arena, void *ptr);
 
 // Initialize a simgle arena free list
@@ -459,7 +459,6 @@ static void mheap_unmap(struct mheap *heap, struct mspan *span) {
 }
 
 static void __mheap_free(struct mheap *heap, struct mspan *span) {
-	struct mspan *tmpspan;
 
 	// todo. back more mem into system, don't cache them
 	if (span->npages > MAX_MHEAP_LIST) {
@@ -525,7 +524,6 @@ struct mspan *mheap_alloc(struct mheap *heap,
 			  int npage, int sizeclass, int zerod) {
 	struct mspan *span, *tmpspan;
 	int n;
-	void *ptr;
 	
 	mheap_lock(heap);
 
@@ -607,6 +605,8 @@ void *mcache_alloc(struct mcache *mc, int size, int zeroed) {
 	first = mc->list[sizeclass];
 	mc->list[sizeclass] = first->next;
 	mc->nelem[sizeclass]--;
+	if (zeroed)
+		memset((void *)first, 0, size);
 	return first;
 }
 

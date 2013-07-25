@@ -7,8 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
-#include <valgrind/valgrind.h>
 
+#ifdef VALGRIND
+#include <valgrind/valgrind.h>
+#endif
 
 struct TaskQueue {
 	pthread_spinlock_t Lock;
@@ -71,7 +73,7 @@ static struct task *taskqueue_pop(struct TaskQueue *tq) {
 struct thread {
 	pthread_t pid;
 	ucontext_t ucp;
-	void *(*mainfunc)(void *args);
+	void (*mainfunc)(void *args);
 	void *args;
 	void *stackguard;
 	int stacksize;
@@ -136,7 +138,7 @@ static void threadqueue_push(struct ThreadQueue *tq, struct thread *t) {
 static int task_idgen;
 static pthread_key_t thread_key;
 
-static struct thread *thread_alloc(void *(*mainfunc)(void *args), void *args) {
+static struct thread *thread_alloc(void (*mainfunc)(void *args), void *args) {
 	struct thread *thread;
 
 	if (!(thread = malloc(sizeof(*thread))))
@@ -152,9 +154,8 @@ static void thread_free(struct thread *thread) {
 	free(thread);
 }
 
-static void thread_create(void *(*mainfunc)(void *args), void *args, int stacksize) {
+static void thread_create(void (*mainfunc)(void *args), void *args, int stacksize) {
 
-	int ret;
 	struct thread *thread;
 	pthread_attr_t pth_attr;
 
@@ -173,7 +174,7 @@ static void thread_create(void *(*mainfunc)(void *args), void *args, int stacksi
 		goto MEM_ERROR;
 	}
 	threadqueue_push(&threadqueue, thread);
-	if (0 != pthread_create(&thread->pid, &pth_attr, mainfunc, thread)) {
+	if (0 != pthread_create(&thread->pid, &pth_attr, (void *(*)(void *))mainfunc, thread)) {
 		fprintf(stderr, "pthread_create failed\n");
 		goto PTHREAD_ERROR;
 	}
@@ -194,7 +195,7 @@ static void thread_create(void *(*mainfunc)(void *args), void *args, int stacksi
 
 static void task_switch(ucontext_t *from, ucontext_t *to) {
 	if (swapcontext(from, to) < 0) {
-		fprintf(stderr, "swapcontext failed: %r\n");
+		fprintf(stderr, "swapcontext failed\n");
 		BUG_ON();
 	}
 }
@@ -240,8 +241,9 @@ static struct task *task_alloc(void (*mainfunc)(void *args), void *args, int sta
 
 	t->ucp.uc_stack.ss_sp = t->stackguard = (void *)(t + 1);
 	t->ucp.uc_stack.ss_size = t->stacksize = stacksize;
-
+#ifdef VALGRIND
 	VALGRIND_STACK_REGISTER(t->stackguard, t->stackguard + t->stacksize);
+#endif
 	makecontext(&t->ucp, (void (*)())task_start, 1, t);
 
 	return t;
@@ -288,18 +290,12 @@ static void task_schedule(void) {
 		BUG_ON();
 
 	for (;;) {
-		/*
-		if (task_count == 0) {
-			fprintf(stdout, "all tasks have done\n");
-			exit(1);
-		}
-		*/
 		t = taskqueue_pop(&taskqueue);
 		if (!t) {
 			fprintf(stderr, "no runnable tasks!\n");
 			return;
 		}
-		fprintf(stdout, "runnning task: %d %d\n", thread->pid, t->tid);
+		fprintf(stdout, "runnning task: %lu %d\n", thread->pid, t->tid);
 		t->status = TASK_RUNNING;
 		thread->task0 = t;
 		task_switch(&thread->ucp, &t->ucp);
@@ -311,14 +307,13 @@ static void task_schedule(void) {
 	}
 }
 
-static void *thread_start(void *args) {
+static void thread_start(void *args) {
 	struct thread *thread = args;
 
-	fprintf(stdout, "thread %d start\n", thread->pid);
+	fprintf(stdout, "thread %lu start\n", thread->pid);
 	pthread_setspecific(thread_key, thread);
 	task_schedule();
-	fprintf(stdout, "thread %d exit\n", thread->pid);
- EXIT:
+	fprintf(stdout, "thread %lu exit\n", thread->pid);
 	pthread_exit(NULL);
 	return;
 }
