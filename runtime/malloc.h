@@ -63,7 +63,7 @@
 //	   charged to the mutator, not the garbage collector.
 //
 
-#include <pthread.h>
+#include "runtime.h"
 #include <sys/queue.h>
 
 enum {
@@ -190,7 +190,7 @@ void mspanlist_remove(struct mspan *span);
 
 
 struct marena {
-	pthread_spinlock_t Lock;
+	struct spinlock Lock;
 	int sizeclass;
 	int elemsize;
 
@@ -208,7 +208,7 @@ void marena_freespan(struct marena *arena, struct mspan *span,
 		     int n, struct mlink *start, struct mlink *end);
 
 struct mheap {
-	pthread_spinlock_t Lock;
+	struct spinlock Lock;
 	struct mspanlist free[MAX_MHEAP_LIST];
 	struct mspanlist large;
 
