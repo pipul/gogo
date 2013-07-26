@@ -38,7 +38,7 @@ int task_create(void (*mainfunc)(void *args), void *args, int stacksize);
 int task_yield(void);
 int task_main(struct task_args *args);
 
-
+#define yield() task_yield()
 #define gogo(func, arg) do {\
 	task_create(func, arg, TASK_STACK_DEFAULT); \
 } while (0)
