@@ -1,10 +1,13 @@
 CC = gcc
+OS =
+ARCH =
 DEBUG = -g -DDEBUG -DVALGRIND -DOS=LINUX
 CFLAGS = -W -Wall $(DEBUG)
 OBJS = 	task.o \
 	malloc.o \
 	mem_linux.o \
-	spinlock.o
+	spinlock.o \
+	syscall_linux.o
 
 LIBRARY = libgogo.a
 
