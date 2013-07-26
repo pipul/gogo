@@ -349,6 +349,9 @@ int main(int argc, char **argv) {
 	taskqueue_init(&taskqueue);
 	threadqueue_init(&threadqueue);
 
+	// initialized mheap
+	mheap_init();
+	
 	if ((ret = pthread_key_create(&thread_key, NULL)) != 0) {
 		fprintf(stderr, "pthread_key_create failed\n");
 		exit(1);

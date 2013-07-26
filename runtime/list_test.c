@@ -227,6 +227,6 @@ int test_hlist() {
 
 
 int main() {
-	//test_list();
+	test_list();
 	test_hlist();
 }

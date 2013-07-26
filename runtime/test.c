@@ -15,16 +15,16 @@ void test_main(void *args) {
 void test_msize(void *args) {
 
 	int i;
-	msize_init();
-	for (i = 0; i < NUM_SIZE_CLASSES; i++) {
+	for (i = 0; i <= max_size_class; i++) {
 		printf("sizeclass %d info: %d %d %d\n", i, class_to_size[i],
 		       class_to_allocnpages[i], class_to_transfercount[i]);
 	}
+}
 
+void test_sizeclass(void *args) {
 	int size, class;
-	int maxsize = 10000;
-	for (i = 0; i < maxsize; i++) {
-		size = rand() % MAX_SMALL_SIZE;
+	int maxsize = MAX_SMALL_SIZE;
+	for (size = 8; size <= maxsize; size += 8) {
 		class = size_class(size);
 		printf("%d of class: %d %d\n", size, class, class_to_size[class]);
 	}
@@ -43,19 +43,27 @@ void test_mem(void *args) {
 	struct mcache *mc;
 	int i, size;
 	void *ptr;
+	void **memmap;
 
 	mheap_init(&runtime_mheap, myalloc, myfree);
 	mc = mheap_mcache_create(&runtime_mheap);
-	for (i = 0; i < 1000; i++) {
-		size = rand() % (MAX_SMALL_SIZE);
+	memmap = malloc(sizeof(void *) * MAX_SMALL_SIZE);
+	if (!memmap)
+		BUG_ON();
+	memset(memmap, 0, sizeof(void *) * MAX_SMALL_SIZE);
+	for (size = 1; size <= MAX_SMALL_SIZE; size++) {
 		ptr = mcache_alloc(mc, size, 1);
 		if (!ptr) {
 			printf("-ENOMEM of %d\n", size);
-			continue;
+			break;
 		}
 		printf("malloc: %ld %d\n", ptr, size);
-		mcache_free(mc, ptr, size);
+		memmap[size - 1] = ptr;
 	}
+	for (size -= 1; size; size--) {
+		mcache_free(mc, memmap[size - 1], size);
+	}
+	free(memmap);
 	mheap_mcache_destroy(&runtime_mheap, mc);
 	mheap_exit(&runtime_mheap);
 	return;
@@ -64,6 +72,7 @@ void test_mem(void *args) {
 int task_main(struct task_args *args) {
 	gogo(test_main, NULL);
 	gogo(test_msize, NULL);
+	gogo(test_sizeclass, NULL);
 	gogo(test_mem, NULL);
 	return 0;
 }

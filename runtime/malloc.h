@@ -21,10 +21,10 @@
 //
 //	2. If the mcache_t free list is empty, replenish it by
 //	   taking a bunch of objects from the mcentral free list.
-//	   Moving a bunch amortizes the cost of acquiring the mcentrol
+//	   Moving a bunch amortizes the cost of acquiring the marena
 //         lock.
 //
-//	3. If the mcentral_t free list is empty, replenish it by
+//	3. If the marena_t free list is empty, replenish it by
 //	   allocating a run of pages from the mheap and then
 //	   chopping that memory into a objects of the given size.
 //	   Allocating many objects amortizes the cost of locking
@@ -41,15 +41,15 @@
 //	   the mcache_t free list.
 //
 //	2. If the mcache_t free list is too long or the mcache_t has
-//	   too much memory, return some to the MCentral free lists.
+//	   too much memory, return some to the marena free lists.
 //
 //	3. If all the objects in a given span have returned to
-//	   the mcentral_t list, return that span to the page heap.
+//	   the marena list, return that span to the page heap.
 //
 // Allocating and freeing a large object uses the page heap
-// directly, bypassing the mcache_t and mcentral_t free lists.
+// directly, bypassing the mcache_t and marena free lists.
 //
-// The small objects on the mcache_t and mcentral_t free lists
+// The small objects on the mcache_t and marena free lists
 // may or may not be zeroed.  They are zeroed if and only if
 // the second word of the object is zero.  The spans in the
 // page heap are always zeroed.  When a span full of objects
@@ -79,7 +79,7 @@ enum {
 	// size classes.  NumSizeClasses is that number.  It's needed here
 	// because there are static arrays of this length; when msize runs its
 	// size choosing algorithm it double-checks that NumSizeClasses agrees.
-	NUM_SIZE_CLASSES = 154,
+	NUM_SIZE_CLASSES = 61,
 
 	// Tunable constants.
 	MAX_SMALL_SIZE = 32<<10, // 32k
@@ -93,7 +93,7 @@ enum {
 	MHEAP_CHUNK_GROW = MAX_MHEAP_LIST,
 
 
-	// todo: small in 32bti arch
+	// todo: at most use 4G memory now...
 	MHEAPMAP_BITS = 32 - PAGESHIFT,
 };
 
@@ -114,6 +114,7 @@ enum {
 void msize_init(void);
 
 int size_class(int size);
+extern int max_size_class; // index from 0
 extern int class_to_size[NUM_SIZE_CLASSES];
 extern int class_to_allocnpages[NUM_SIZE_CLASSES];
 extern int class_to_transfercount[NUM_SIZE_CLASSES];
@@ -164,11 +165,8 @@ void fixmem_free(struct fixmem *fm, void *ptr);
 struct mspan {
 	long pageid;                 // starting page number
 	int npages;                  // number of pages in span
-	//int sizeclass;               // size class
-	//int elemsize;                // computed from sizeclass of from npages
 	int ref;                     // number of allocated objects in this span
 	struct mlink *freelist;      // list of free objects
-
 	struct list_head alllink;    // in a span linked list
 };
 
@@ -188,7 +186,7 @@ struct marena {
 
 void marena_init(struct marena *arena, int sizeclass);
 int marena_alloclist(struct marena *arena, int n, struct mlink **first);
-void marena_freelist(struct marena *arena, int n, struct mlink *first);
+void marena_freelist(struct marena *arena, struct mlink *first);
 void marena_freespan(struct marena *arena, struct mspan *span,
 		     int n, struct mlink *start, struct mlink *end);
 
@@ -212,8 +210,7 @@ extern struct mheap runtime_mheap;
 void mheap_init(struct mheap *heap,
 		void *(*allocator)(int), void (*free)(void *));
 void mheap_exit(struct mheap *heap);
-struct mspan *mheap_alloc(struct mheap *heap,
-			  int npages, int sizeclass, int zerod);
+struct mspan *mheap_alloc(struct mheap *heap, int npages, int zerod);
 void mheap_free(struct mheap *heap, struct mspan *span);
 struct mspan *mheap_lookup(struct mheap *heap, void *ptr);
 

@@ -9,10 +9,10 @@
 #define BUG_ON(x...) abort();
 
 struct mheap runtime_mheap;
-
-int class_to_size[NUM_SIZE_CLASSES];
-int class_to_allocnpages[NUM_SIZE_CLASSES];
-int class_to_transfercount[NUM_SIZE_CLASSES];
+int max_size_class = 0;
+int class_to_size[NUM_SIZE_CLASSES] = {};
+int class_to_allocnpages[NUM_SIZE_CLASSES] = {};
+int class_to_transfercount[NUM_SIZE_CLASSES] = {};
 
 
 // The size_to_class lookup is implemented using two arrays.
@@ -32,29 +32,36 @@ static int size_to_class[MAX_SMALL_SIZE / 8];
 
 int size_class(int size) {
 	if (size > MAX_SMALL_SIZE)
-		return 0;
+		return -1;
 	return size_to_class[(rounded_up8(size) >> 3) - 1];
 }
 
+
 void msize_init(void) {
-	int align, sizeclass, size, nextsize;
+	int align, sizeclass, size;
 	int allocsize, npages;
 
+	/*
 	class_to_size[0] = 0;
 	class_to_allocnpages[0] = 1;
 	class_to_transfercount[0] = 1;
 	sizeclass = 1;
+	*/
+	sizeclass = 0;
 	align = 8;
 
 	for (size = align; size <= MAX_SMALL_SIZE; size += align) {
 		// bump alignment once in a while
-		if (size >= 4096)
-			align = 512;
-		else if (size >= 1024)
-			align = 128;
-		else if (size >= 16)
-			align = 16;
+		if ((size & (size - 1)) == 0) {
+			if (size >= 2048)
+				align = 256;
+			else if (size >= 128)
+				align = size / 8;
+			else if (size >= 16)
+				align = 16;
+		}
 
+		fprintf(stdout, "init size class: %d %d %d\n", sizeclass, size, align);
 		// todo:
 		// Make the allocnpages big enough that
 		// the leftover is less than 1/8 of the total.
@@ -65,6 +72,12 @@ void msize_init(void) {
 			allocsize += PAGESIZE;
 		npages = allocsize >> PAGESHIFT;
 
+		if (sizeclass > 1 &&
+		    npages == class_to_allocnpages[sizeclass - 1] &&
+		    allocsize/size == allocsize/class_to_size[sizeclass - 1]) {
+			class_to_size[sizeclass - 1] = size;
+			continue;
+		}
 
 		class_to_size[sizeclass] = size;
 		class_to_allocnpages[sizeclass] = npages;
@@ -73,29 +86,34 @@ void msize_init(void) {
 		// fix the number of transfercount
 		class_to_transfercount[sizeclass] = 2;
 		sizeclass++;
-
-		if (size == MAX_SMALL_SIZE) {
-			break;
-		}
-
-		// fill in the size_to_class array
-		nextsize = size + 8;
-		while (nextsize < size + align) {
-			size_to_class[nextsize / 8] = sizeclass;
-			nextsize += 8;
-		}
 	}
+	max_size_class = sizeclass - 1;
+
+	// initialize the size_to_class table, start from 1.
+	for (sizeclass = 1; sizeclass <= max_size_class; sizeclass++) {
+		size = class_to_size[sizeclass];
+		do {
+			size_to_class[(size >> 3) - 1] = sizeclass;
+			size -= 8;
+		} while (size > class_to_size[sizeclass - 1]);
+	}
+	
 	return;
 }
 
 
 void size_class_info(int sizeclass, int *size, int *npages, int *nobjs) {
+	if (sizeclass > max_size_class)
+		goto ERROR;
 	*size = class_to_size[sizeclass];
 	*npages = class_to_allocnpages[sizeclass];
-	if (sizeclass == 0)
-		*nobjs = 1;
-	else
-		*nobjs = (*npages << PAGESHIFT) / *size;
+	*nobjs = (*npages << PAGESHIFT) / *size;
+	return;
+ ERROR:
+	*size = -1;
+	*npages = -1;
+	*nobjs = -1;
+	return;
 }
 
 
@@ -179,7 +197,7 @@ void marena_init(struct marena *arena, int sizeclass) {
 // Return the number of objects allocated. the objects are linked
 // together by their first words.
 int marena_alloclist(struct marena *arena, int n, struct mlink **pfirst) {
-	struct mspan *s;
+	struct mspan *span;
 	struct mlink *first, *last;
 	int cap, avail, i;
 
@@ -193,34 +211,28 @@ int marena_alloclist(struct marena *arena, int n, struct mlink **pfirst) {
 		}
 	}
 
-	s = list_entry(list_head(&arena->nonempty), struct mspan, alllink);
-
-	if (arena->sizeclass != 0)
-		cap = (s->npages << PAGESHIFT) / arena->elemsize;
-	else
-		// for large mspan alloc
-		cap = 1;
-	
-	if ((avail = cap - s->ref) < n)
+	span = list_entry(list_head(&arena->nonempty), struct mspan, alllink);
+	cap = (span->npages << PAGESHIFT) / arena->elemsize;
+	if ((avail = cap - span->ref) < n)
 		n = avail;
 
 	// First one is guaranteed to work, because we just grew the list.
-	first = s->freelist;
+	first = span->freelist;
 	last = first;
 	for (i = 1; i < n; i++) {
 		last = last->next;
 	}
-	s->freelist = last->next;
+	span->freelist = last->next;
 	last->next = NULL;
-	s->ref += n;
+	span->ref += n;
 
 	// Maybe this span was empty if all avail is inused
 	if (n == avail) {
-		if (s->freelist != NULL || s->ref != cap) {
+		if (span->freelist != NULL || span->ref != cap) {
 			// invalid mspan
 			BUG_ON();
 		}
-		list_move(&s->alllink, &arena->empty);
+		list_move(&span->alllink, &arena->empty);
 	}
 
 	spin_unlock(arena);
@@ -256,7 +268,7 @@ static void marena_free(struct marena *arena, void *ptr) {
 	}
 }
 
-void marena_freelist(struct marena *arena, int n, struct mlink *first) {
+void marena_freelist(struct marena *arena, struct mlink *first) {
 	struct mlink *v, *next;
 	
 	spin_lock(arena);
@@ -269,7 +281,6 @@ void marena_freelist(struct marena *arena, int n, struct mlink *first) {
 
 void marena_freespan(struct marena *arena, struct mspan *span,
 		     int n, struct mlink *start, struct mlink *end) {
-	int size;
 	spin_lock(arena);
 
 	// move to nonempty if necessary
@@ -284,7 +295,6 @@ void marena_freespan(struct marena *arena, struct mspan *span,
 
 	// If span is completely freed, return it to heap
 	if (span->ref == 0) {
-		size = class_to_size[arena->sizeclass];
 		list_del(&span->alllink);
 		spin_unlock(arena);
 		
@@ -313,7 +323,7 @@ static int marena_grow(struct marena *arena) {
 	spin_unlock(arena);
 
 	size_class_info(arena->sizeclass, &size, &npages, &nobjs);
-	span = mheap_alloc(&runtime_mheap, npages, arena->sizeclass, 1);
+	span = mheap_alloc(&runtime_mheap, npages, 1);
 	if (!span) {
 		spin_lock(arena);
 		return -1;
@@ -351,9 +361,9 @@ void mheap_init(struct mheap *heap,
 	msize_init();
 
 	mapsize = (1 << MHEAPMAP_BITS) * sizeof(struct mspan *);
-	fprintf(stdout, "map size: %d\n", mapsize);
 	heap->map = sys_alloc(mapsize);
 	if (!heap->map) {
+		fprintf(stderr, "can't initialize the mheap map\n");
 		BUG_ON();
 	}
 	memset(heap->map, 0, mapsize);
@@ -379,6 +389,8 @@ void mheap_exit(struct mheap *heap) {
 	for (i = 0; i < slot; i++) {
 		if (!(span = heap->map[i]))
 			continue;
+		if (i != span->pageid)
+			BUG_ON();
 		sys_free((void *)(span->pageid << PAGESHIFT),
 			 span->npages << PAGESHIFT);
 		i += span->npages - 1;
@@ -474,8 +486,7 @@ static struct mspan *mheap_alloclarge(struct mheap *heap, int npage) {
 
 
 
-struct mspan *mheap_alloc(struct mheap *heap,
-			  int npage, int sizeclass, int zerod) {
+struct mspan *mheap_alloc(struct mheap *heap, int npage, int zeroed) {
 	struct mspan *span, *tmpspan;
 	int n;
 	
@@ -513,7 +524,8 @@ struct mspan *mheap_alloc(struct mheap *heap,
 
 	mheap_map(heap, span);
 	spin_unlock(heap);
-	memset((void *)(span->pageid << PAGESHIFT), 0, npage << PAGESHIFT);
+	if (zeroed)
+		memset((void *)(span->pageid << PAGESHIFT), 0, npage << PAGESHIFT);
 	return span;
  ENOMEM:
 	spin_unlock(heap);
@@ -594,8 +606,7 @@ void mheap_mcache_destroy(struct mheap *heap, struct mcache *mc) {
 	for (i = 0; i < NUM_SIZE_CLASSES; i++) {
 		if (!mc->list[i])
 			continue;
-		marena_freelist(&runtime_mheap.arenas[i],
-				mc->nelem[i], mc->list[i]);
+		marena_freelist(&runtime_mheap.arenas[i], mc->list[i]);
 		mc->nelem[i] = 0;
 		mc->list[i] = NULL;
 	}
