@@ -47,7 +47,9 @@ struct list_head {
 } while(0)
 
 
-#define list_head(head) (head)->next
+#define list_first(head, type, member) \
+	container_of((head)->next, type, member)
+
 
 // Insert a new entry between two known consecutive entries
 // this is only for internal list manipulation where we know

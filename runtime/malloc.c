@@ -164,15 +164,12 @@ void fixmem_free(struct fixmem *fm, void *ptr) {
 
 void mspan_init(struct mspan *span, long pageid, int npages) {
 
-	// fix for LIST_ENTRY_INIT()
 	memset(span, 0, sizeof(*span));
 
 	span->pageid = pageid;
 	span->npages = npages;
 	span->freelist = NULL;
 	span->ref = 0;
-	//span->sizeclass = NULL;
-	//span->elemsize = 0;
 }
 
 
@@ -211,7 +208,7 @@ int marena_alloclist(struct marena *arena, int n, struct mlink **pfirst) {
 		}
 	}
 
-	span = list_entry(list_head(&arena->nonempty), struct mspan, alllink);
+	span = list_first(&arena->nonempty, struct mspan, alllink);
 	cap = (span->npages << PAGESHIFT) / arena->elemsize;
 	if ((avail = cap - span->ref) < n)
 		n = avail;
@@ -495,7 +492,7 @@ struct mspan *mheap_alloc(struct mheap *heap, int npage, int zeroed) {
 	// First: try in fixed-size lists up to max
 	for (n = npage; n < MAX_MHEAP_LIST; n++) {
 		if (!list_empty(&heap->free[n - 1])) {
-			span = list_entry(list_head(&heap->free[n - 1]), struct mspan, alllink);
+			span = list_first(&heap->free[n - 1], struct mspan, alllink);
 			goto found;
 		}
 	}
