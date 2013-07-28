@@ -38,7 +38,7 @@ int size_class(int size) {
 
 
 void msize_init(void) {
-	int align, sizeclass, size;
+	int align, sizeclass, size, nobjs;
 	int allocsize, npages;
 
 	/*
@@ -61,7 +61,6 @@ void msize_init(void) {
 				align = 16;
 		}
 
-		fprintf(stdout, "init size class: %d %d %d\n", sizeclass, size, align);
 		// todo:
 		// Make the allocnpages big enough that
 		// the leftover is less than 1/8 of the total.
@@ -70,6 +69,7 @@ void msize_init(void) {
 		allocsize = PAGESIZE;
 		while (allocsize % size > allocsize/8)
 			allocsize += PAGESIZE;
+		allocsize  *= 2;
 		npages = allocsize >> PAGESHIFT;
 
 		if (sizeclass > 1 &&
@@ -84,7 +84,18 @@ void msize_init(void) {
 
 		// todo:
 		// fix the number of transfercount
+
+		nobjs = 64 * 1024 / size;
+		if (nobjs < 2)
+			nobjs = 2;
+		if (nobjs > 32)
+			nobjs = 32;
+		class_to_transfercount[sizeclass] = nobjs;
+
 		class_to_transfercount[sizeclass] = 2;
+		fprintf(stdout, "size class %d: %d %d %d\n", sizeclass, size,
+			class_to_allocnpages[sizeclass],
+			class_to_transfercount[sizeclass]);
 		sizeclass++;
 	}
 	max_size_class = sizeclass - 1;
@@ -160,6 +171,137 @@ void fixmem_free(struct fixmem *fm, void *ptr) {
 }
 
 
+
+// address_space
+/*
+void intcache_setrange(struct intcache *ic, int idx, int n, void *data) {
+	int i;
+
+	for (i = 0; i < n; i++) {
+		ic->data[idx + i] = data;
+	}
+	return;
+}
+
+void intcache_clearrange(struct intcache *ic, int idx, int n) {
+	int i;
+
+	for (i = 0; i < n; i++) {
+		ic->data[idx + i] = NULL;
+	}
+	return;
+}
+
+int intcache_getrange(struct intcache *ic, int n, int offset) {
+	int i, tmp;
+
+	for (i = offset; i < ic->cap; i++) {
+		if (ic->data[i])
+			continue;
+		for (tmp = 0; tmp < n; tmp++) {
+			if (ic->data[i + tmp])
+				break;
+		}
+		if (tmp != n) {
+			i += tmp;
+			continue;
+		}
+
+		// reach here, that found and valid range.
+		return i;
+	}
+	return -1;
+}
+
+
+int address_space_init(struct address_space *space, void *low, int npage) {
+	space->low = low;
+	space->npage = npage;
+	space->allocpages = space->freepages = 0;
+	intcache_init(&space->map, npage);
+	return 0;
+}
+
+void address_space_exit(struct address_space *space) {
+	struct mspan *span;
+	int i, slot = 1 << MHEAPMAP_BITS;
+
+	for (i = 0; i < slot; i++) {
+		if (!(span = space->map.data[i]))
+			continue;
+		i += span->npages - 1;
+		address_space_free(space, span);
+	}
+
+	intcache_exit(&space->map);
+}
+
+
+// helper function for mmap
+
+
+struct mspan *address_space_alloc(struct address_space *space, int npage) {
+	long pageid;
+	int size;
+	void *ptr;
+	struct mspan *span;
+
+	size = npage << PAGESHIFT;
+	pageid = intcache_getrange(&space->map, npage, 0);
+	if (pageid < 0)
+		return NULL;
+	
+	// the real mmap address
+	ptr = space->low + (pageid << PAGESHIFT);
+	ptr = sys_alloc2(ptr, size);
+	if (!ptr)
+		return NULL;
+	if (!(span = malloc(sizeof(*span)))) {
+		sys_free(ptr, size);
+		return NULL;
+	}
+	mspan_init(span, pageid + ((long)space->low >> PAGESHIFT), npage);
+	intcache_setrange(&space->map, pageid, npage, span);
+	space->allocpages += npage;
+	return span;
+}
+
+
+void address_space_free(struct address_space *space, struct mspan *span) {
+	int idx;
+	void *ptr;
+
+	ptr = (void *)(span->pageid << PAGESHIFT);
+	idx = span->pageid - ((long)space->low >> PAGESHIFT);
+	intcache_clearrange(&space->map, idx, span->npages);
+	sys_free(ptr, span->npages << PAGESHIFT);
+	space->freepages += span->npages;
+	free(span);
+}
+
+
+struct mspan *address_space_split(struct address_space *space, struct mspan *span, int npage) {
+	struct mspan *new;
+	int idx;
+	
+	if (npage >= span->npages)
+		return NULL;
+	if (!(new = malloc(sizeof(*new))))
+		return NULL;
+	mspan_init(new, span->pageid + npage, span->npages - npage);
+	span->npages = npage;
+	idx = new->pageid - ((long)space->low >> PAGESHIFT);
+	intcache_setrange(&space->map, idx, new->npages, new);
+	return new;
+}
+
+
+
+*/
+
+
+
+
 // mspan
 
 void mspan_init(struct mspan *span, long pageid, int npages) {
@@ -187,6 +329,8 @@ void marena_init(struct marena *arena, int sizeclass) {
 	arena->elemsize = class_to_size[sizeclass];
 	INIT_LIST_HEAD(&arena->empty);
 	INIT_LIST_HEAD(&arena->nonempty);
+	arena->cachemiss = 0;
+	arena->cachehit = 0;
 }
 
 
@@ -200,13 +344,15 @@ int marena_alloclist(struct marena *arena, int n, struct mlink **pfirst) {
 
 	spin_lock(arena);
 	if (list_empty(&arena->nonempty)) {
+		arena->cachemiss++;
 		// allocate more memory from heap
 		if (marena_grow(arena)) {
 			spin_unlock(arena);
 			*pfirst = NULL;
 			return 0;
 		}
-	}
+	} else
+		arena->cachehit++;
 
 	span = list_first(&arena->nonempty, struct mspan, alllink);
 	cap = (span->npages << PAGESHIFT) / arena->elemsize;
@@ -364,16 +510,22 @@ void mheap_init(struct mheap *heap,
 		BUG_ON();
 	}
 	memset(heap->map, 0, mapsize);
+
+	//address_space_init(&heap->map, LOW_ADDR_BOUND, 1 << MHEAPMAP_BITS);
 	
 	for (i = 0; i < MAX_MHEAP_LIST; i++) {
 		INIT_LIST_HEAD(&heap->free[i]);
 	}
 	INIT_LIST_HEAD(&heap->large);
 	for (i = 0; i < NUM_SIZE_CLASSES; i++) {
-		marena_init(&heap->arenas[i], i);
+		marena_init(&heap->arenas[i].__raw, i);
 	}
 	fixmem_init(&heap->mspancache, sizeof(struct mspan), allocator, free);
 	fixmem_init(&heap->mcachecache, sizeof(struct mcache), allocator, free);
+	heap->cachemiss = 0;
+	heap->cachehit = 0;
+
+
 	return;
 }
 
@@ -383,6 +535,7 @@ void mheap_exit(struct mheap *heap) {
 
 	spin_lock(heap);
 	// sys_free all the allocated pages
+
 	for (i = 0; i < slot; i++) {
 		if (!(span = heap->map[i]))
 			continue;
@@ -394,6 +547,9 @@ void mheap_exit(struct mheap *heap) {
 		fixmem_free(&heap->mspancache, span);
 	}
 
+
+	//address_space_exit(&heap->map);
+
 	// free all the fixmem
 	fixmem_exit(&heap->mspancache);
 	fixmem_exit(&heap->mcachecache);
@@ -403,6 +559,7 @@ void mheap_exit(struct mheap *heap) {
 }
 
 // map a pages range into heap->map
+
 static void mheap_map(struct mheap *heap, struct mspan *span) {
 	long i;
 
@@ -421,6 +578,7 @@ static void mheap_unmap(struct mheap *heap, struct mspan *span) {
 	}
 	return;
 }
+
 
 static void __mheap_free(struct mheap *heap, struct mspan *span) {
 
@@ -453,13 +611,22 @@ static int mheap_grow(struct mheap *heap, int npage) {
 		npage = MHEAP_CHUNK_GROW + 16;
 
 	ptr = sys_alloc(npage << PAGESHIFT);
-	if (!ptr)
+	if (!ptr) {
+		fprintf(stderr, "mheap grow failed!\n");
 		return -1;
+	}
 	span = fixmem_alloc(&heap->mspancache);
 	mspan_init(span, (long)ptr >> PAGESHIFT, npage);
 
 	// map new span
 	mheap_map(heap, span);
+	/*
+	span = address_space_alloc(&heap->map, npage);
+	if (!span) {
+		fprintf(stderr, "mheap grow failed!\n");
+		return -1;
+	}
+	*/
 	__mheap_free(heap, span);
 	return 0;
 }
@@ -490,6 +657,7 @@ struct mspan *mheap_alloc(struct mheap *heap, int npage, int zeroed) {
 	spin_lock(heap);
 
 	// First: try in fixed-size lists up to max
+
 	for (n = npage; n < MAX_MHEAP_LIST; n++) {
 		if (!list_empty(&heap->free[n - 1])) {
 			span = list_first(&heap->free[n - 1], struct mspan, alllink);
@@ -499,11 +667,13 @@ struct mspan *mheap_alloc(struct mheap *heap, int npage, int zeroed) {
 
 	// Second: try in large list
 	if (!(span = mheap_alloclarge(heap, npage))) {
+		heap->cachemiss++;
 		if (mheap_grow(heap, npage))
 			goto ENOMEM;
 		if (!(span = mheap_alloclarge(heap, npage)))
 			goto ENOMEM;
-	}
+	} else
+		heap->cachehit++;
 
  found:
 
@@ -511,15 +681,19 @@ struct mspan *mheap_alloc(struct mheap *heap, int npage, int zeroed) {
 	if (span->npages > npage) {
 		// Trim extra pages back into heap
 		tmpspan = fixmem_alloc(&heap->mspancache);
-		mspan_init(tmpspan, span->pageid + npage, span->npages - npage);
-		span->npages = npage;
-		mheap_map(heap, tmpspan);
 
+		/*
+		tmpspan = address_space_split(&heap->map, span, npage);
+		*/
 		// back into heap's list, locked!
-		__mheap_free(heap, tmpspan);
+		if (tmpspan) {
+			mspan_init(tmpspan, span->pageid + npage, span->npages - npage);
+			span->npages = npage;
+			mheap_map(heap, tmpspan);
+			__mheap_free(heap, tmpspan);
+		}
 	}
 
-	mheap_map(heap, span);
 	spin_unlock(heap);
 	if (zeroed)
 		memset((void *)(span->pageid << PAGESHIFT), 0, npage << PAGESHIFT);
@@ -529,11 +703,33 @@ struct mspan *mheap_alloc(struct mheap *heap, int npage, int zeroed) {
 	return NULL;
 }
 
-
 struct mspan *mheap_lookup(struct mheap *heap, void *ptr) {
+	long pageid;
 
-	long pageid = (long)ptr >> PAGESHIFT;
+	pageid = (long)ptr >> PAGESHIFT;
 	return heap->map[pageid];
+}
+
+
+void mheap_stat(struct mheap *heap) {
+	int i;
+	float rate;
+	char buf[20];
+	struct marena *arena;
+	rate = (float)(heap->cachemiss + heap->cachehit);
+	fprintf(stdout, "mheap statistics: %d/%d rate: %.2f\n",
+		heap->cachemiss, heap->cachemiss + heap->cachehit,
+		rate ? (float)heap->cachemiss / rate : 0);
+	fprintf(stdout, "%-10s   %-10s   %-10s\n", "class", "miss/all", "rate");
+	for (i = 0; i < NUM_SIZE_CLASSES; i++) {
+		arena = &heap->arenas[i].__raw;
+		rate = arena->cachehit + arena->cachemiss;
+		snprintf(buf, sizeof(buf), "%d:%d", arena->cachemiss,
+			 arena->cachehit + arena->cachemiss);
+		fprintf(stdout, "%10d   %10s   %10.2f\n", i, buf,
+			rate ? (float)arena->cachemiss / rate : 0);
+	}
+	return;
 }
 
 
@@ -557,7 +753,7 @@ void *mcache_alloc(struct mcache *mc, int size, int zeroed) {
 	struct mlink *first;
 
 	if (!mc->list[sizeclass]) {
-		n = marena_alloclist(&runtime_mheap.arenas[sizeclass],
+		n = marena_alloclist(&runtime_mheap.arenas[sizeclass].__raw,
 				     class_to_transfercount[sizeclass], &first);
 		if (!n) {
 			return NULL;
@@ -603,7 +799,7 @@ void mheap_mcache_destroy(struct mheap *heap, struct mcache *mc) {
 	for (i = 0; i < NUM_SIZE_CLASSES; i++) {
 		if (!mc->list[i])
 			continue;
-		marena_freelist(&runtime_mheap.arenas[i], mc->list[i]);
+		marena_freelist(&runtime_mheap.arenas[i].__raw, mc->list[i]);
 		mc->nelem[i] = 0;
 		mc->list[i] = NULL;
 	}

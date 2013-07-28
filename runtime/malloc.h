@@ -65,6 +65,8 @@
 
 #include "runtime.h"
 #include "list.h"
+#include <string.h>
+#include <stdio.h>
 
 enum {
 	PAGESHIFT = 12,
@@ -79,7 +81,7 @@ enum {
 	// size classes.  NumSizeClasses is that number.  It's needed here
 	// because there are static arrays of this length; when msize runs its
 	// size choosing algorithm it double-checks that NumSizeClasses agrees.
-	NUM_SIZE_CLASSES = 61,
+	NUM_SIZE_CLASSES = 63,
 
 	// Tunable constants.
 	MAX_SMALL_SIZE = 32<<10, // 32k
@@ -95,7 +97,16 @@ enum {
 
 	// todo: at most use 4G memory now...
 	MHEAPMAP_BITS = 32 - PAGESHIFT,
+
+#if defined (__LP64__) || defined (__64BIT__) || defined (_LP64) || (__WORDSIZE == 64)
+	CACHE_LINE_SIZE = 64,
+#else
+	CACHE_LINE_SIZE = 32,
+#endif
+
 };
+
+
 
 
 // Size classes. Computed and initialized by init_msize()
@@ -134,6 +145,7 @@ struct mlink {
 
 // mem interface of os_arch dependent
 void *sys_alloc(int size);
+void *sys_alloc2(void *ptr, int size);
 void sys_free(void *ptr, int size);
 
 
@@ -157,11 +169,6 @@ void fixmem_free(struct fixmem *fm, void *ptr);
 
 
 
-
-
-
-
-
 struct mspan {
 	long pageid;                 // starting page number
 	int npages;                  // number of pages in span
@@ -173,6 +180,30 @@ struct mspan {
 void mspan_init(struct mspan *span, long pageid, int npages);
 
 
+/*
+
+int address_space_init(struct address_space *space, void *low, int npage);
+void address_space_exit(struct address_space *space);
+
+// helper function for mmap
+struct mspan *address_space_alloc(struct address_space *space, int npages);
+void address_space_free(struct address_space *space, struct mspan *span);
+
+// split one mspan into two, the origin span contain npage page
+// and the new mspan contain all the rest page
+struct mspan *address_space_split(struct address_space *space, struct mspan *span, int npage);
+static inline struct mspan *address_space_lookup(struct address_space *space, void *ptr) {
+	int idx;
+
+	idx = (ptr - space->low) >> PAGESHIFT;
+	return space->map.data[idx];
+}
+
+static inline void address_space_stat(struct address_space *space) {
+	fprintf(stdout, "mempage statistics %d/%d\n", space->allocpages, space->freepages);
+}
+
+*/
 
 struct marena {
 	// Lock must be the first field
@@ -182,6 +213,11 @@ struct marena {
 
 	struct list_head empty;
 	struct list_head nonempty;
+
+
+	// for statistics
+	int cachemiss;
+	int cachehit;
 };
 
 void marena_init(struct marena *arena, int sizeclass);
@@ -198,10 +234,18 @@ struct mheap {
 
 	//struct mspan *map[1<<MHEAPMAP_BITS];
 	struct mspan **map;
-	struct marena arenas[NUM_SIZE_CLASSES];
+	//struct address_space map;
+	union {
+		struct marena __raw;
+		char pad[CACHE_LINE_SIZE];
+	} arenas[NUM_SIZE_CLASSES];
 
 	struct fixmem mspancache;    // allocator for mspan*
 	struct fixmem mcachecache;   // allocator for mcache*
+
+	// for statistics
+	int cachemiss;
+	int cachehit;
 };
 
 
@@ -213,7 +257,7 @@ void mheap_exit(struct mheap *heap);
 struct mspan *mheap_alloc(struct mheap *heap, int npages, int zerod);
 void mheap_free(struct mheap *heap, struct mspan *span);
 struct mspan *mheap_lookup(struct mheap *heap, void *ptr);
-
+void mheap_stat(struct mheap *heap);
 
 
 

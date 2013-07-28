@@ -1,7 +1,7 @@
 CC = gcc
-OS =
-ARCH =
-DEBUG = -g -DDEBUG -DVALGRIND -DOS=LINUX
+OS = _OS_linux
+ARCH = _ARCH_amd64
+DEBUG = -g -DDEBUG -DVALGRIND
 CFLAGS = -W -Wall $(DEBUG)
 OBJS = 	task.o \
 	malloc.o \
