@@ -126,6 +126,7 @@ void msize_init(void);
 
 int size_class(int size);
 extern int max_size_class; // index from 0
+extern int max_small_size;
 extern int class_to_size[NUM_SIZE_CLASSES];
 extern int class_to_allocnpages[NUM_SIZE_CLASSES];
 extern int class_to_transfercount[NUM_SIZE_CLASSES];

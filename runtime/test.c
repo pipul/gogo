@@ -30,12 +30,16 @@ void test_sizeclass(void *args) {
 	}
 }
 
+static int myallocn;
+static int myfreen;
 void *myalloc(int size) {
+	myallocn++;
 	return malloc(size);
 }
 
 void myfree(void *ptr) {
 	printf("free addr:%ld\n", ptr);
+	myfreen++;
 	free(ptr);
 }
 
@@ -66,6 +70,10 @@ void test_mem(void *args) {
 	free(memmap);
 	mheap_mcache_destroy(&runtime_mheap, mc);
 	mheap_exit(&runtime_mheap);
+	if (myallocn != myfreen) {
+		fprintf(stdout, "%d alloc, %d free\n", myallocn, myfreen);
+		BUG_ON();
+	}
 	return;
 }
 

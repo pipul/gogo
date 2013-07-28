@@ -3,13 +3,13 @@
 #include "malloc.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 
 #define BUG_ON(x...) abort();
 
 struct mheap runtime_mheap;
 int max_size_class = 0;
+int max_small_size = 0;
 int class_to_size[NUM_SIZE_CLASSES] = {};
 int class_to_allocnpages[NUM_SIZE_CLASSES] = {};
 int class_to_transfercount[NUM_SIZE_CLASSES] = {};
@@ -69,7 +69,7 @@ void msize_init(void) {
 		allocsize = PAGESIZE;
 		while (allocsize % size > allocsize/8)
 			allocsize += PAGESIZE;
-		allocsize  *= 2;
+		//allocsize  *= 2;
 		npages = allocsize >> PAGESHIFT;
 
 		if (sizeclass > 1 &&
@@ -97,6 +97,7 @@ void msize_init(void) {
 			class_to_allocnpages[sizeclass],
 			class_to_transfercount[sizeclass]);
 		sizeclass++;
+		max_small_size = size;
 	}
 	max_size_class = sizeclass - 1;
 
