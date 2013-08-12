@@ -300,7 +300,9 @@ static void task_schedule(void) {
 			fprintf(stderr, "no runnable tasks!\n");
 			return;
 		}
+#ifdef DEBUG
 		fprintf(stdout, "runnning task: %lu %d\n", thread->pid, t->tid);
+#endif
 		t->status = TASK_RUNNING;
 		thread->task0 = t;
 		task_switch(&thread->ucp, &t->ucp);

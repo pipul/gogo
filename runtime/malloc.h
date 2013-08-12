@@ -81,7 +81,7 @@ enum {
 	// size classes.  NumSizeClasses is that number.  It's needed here
 	// because there are static arrays of this length; when msize runs its
 	// size choosing algorithm it double-checks that NumSizeClasses agrees.
-	NUM_SIZE_CLASSES = 63,
+	NUM_SIZE_CLASSES = 61,
 
 	// Tunable constants.
 	MAX_SMALL_SIZE = 32<<10, // 32k
@@ -98,14 +98,14 @@ enum {
 	// todo: at most use 4G memory now...
 	MHEAPMAP_BITS = 32 - PAGESHIFT,
 
-#if defined (__LP64__) || defined (__64BIT__) || defined (_LP64) || (__WORDSIZE == 64)
-	CACHE_LINE_SIZE = 64,
-#else
-	CACHE_LINE_SIZE = 32,
-#endif
 
 };
 
+#if defined (__LP64__) || defined (__64BIT__) || defined (_LP64) || (__WORDSIZE == 64)
+#define	CACHE_LINE_SIZE 64
+#else
+#define	CACHE_LINE_SIZE 32
+#endif
 
 
 

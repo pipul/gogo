@@ -23,7 +23,7 @@ void test_msize(void *args) {
 
 void test_sizeclass(void *args) {
 	int size, class;
-	int maxsize = MAX_SMALL_SIZE;
+	int maxsize = max_small_size;
 	for (size = 8; size <= maxsize; size += 8) {
 		class = size_class(size);
 		printf("%d of class: %d %d\n", size, class, class_to_size[class]);
@@ -51,11 +51,11 @@ void test_mem(void *args) {
 
 	mheap_init(&runtime_mheap, myalloc, myfree);
 	mc = mheap_mcache_create(&runtime_mheap);
-	memmap = malloc(sizeof(void *) * MAX_SMALL_SIZE);
+	memmap = malloc(sizeof(void *) * max_small_size);
 	if (!memmap)
 		BUG_ON();
-	memset(memmap, 0, sizeof(void *) * MAX_SMALL_SIZE);
-	for (size = 1; size <= MAX_SMALL_SIZE; size++) {
+	memset(memmap, 0, sizeof(void *) * max_small_size);
+	for (size = 1; size <= max_small_size; size++) {
 		ptr = mcache_alloc(mc, size, 1);
 		if (!ptr) {
 			printf("-ENOMEM of %d\n", size);
@@ -77,11 +77,33 @@ void test_mem(void *args) {
 	return;
 }
 
+
+void test_gogo_foo(void *args) {
+	args++;
+	//printf("test_gogo_foo ...\n");
+	return;
+}
+
+void test_gogo(void *args) {
+	int i, limit = 1000000;
+	double ct;
+	struct timespec start, end;
+
+	clock_gettime(CLOCK_REALTIME, &start);
+	for (i = 0; i < limit; i++) {
+		gogo(test_gogo_foo, NULL);
+	}
+	clock_gettime(CLOCK_REALTIME, &end);
+	ct = (end.tv_sec - start.tv_sec) * 1000000000ULL + end.tv_nsec - start.tv_nsec;
+	fprintf(stdout, "building %d thread cost: %lld\n", limit, ct);
+}
+
 int task_main(struct task_args *args) {
 	gogo(test_main, NULL);
-	gogo(test_msize, NULL);
-	gogo(test_sizeclass, NULL);
-	gogo(test_mem, NULL);
+	//gogo(test_msize, NULL);
+	//gogo(test_sizeclass, NULL);
+	//gogo(test_mem, NULL);
+	gogo(test_gogo, NULL);
 	return 0;
 }
 

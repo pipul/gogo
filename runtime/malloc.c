@@ -753,6 +753,9 @@ void *mcache_alloc(struct mcache *mc, int size, int zeroed) {
 	int n;
 	struct mlink *first;
 
+	if (sizeclass < 0)
+		return NULL;
+
 	if (!mc->list[sizeclass]) {
 		n = marena_alloclist(&runtime_mheap.arenas[sizeclass].__raw,
 				     class_to_transfercount[sizeclass], &first);
